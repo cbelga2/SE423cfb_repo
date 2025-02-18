@@ -267,8 +267,8 @@ void main(void)
      EPwm12Regs.TBCTL.bit.PHSEN=0; // Time-base counter is not loaded from the phase register - cfb
      EPwm12Regs.TBCTL.bit.CLKDIV=0; // Sets clockdivide to 1 - cfb
      EPwm12Regs.TBCTR=0; // Initializes Time-base counter to zero which is default setting - cfb
-     EPwm12Regs.TBPRD=5000; // Sets period (carrier frequency of the PWM signal to 5KHz which is a period of 200ms.
-     EPwm12Regs.CMPA.bit.CMPA=2500; // Starts duty cycle at 50%
+     EPwm12Regs.TBPRD=10000; // Sets period (carrier frequency of the PWM signal to 5KHz which is a period of 200ms.
+     EPwm12Regs.CMPA.bit.CMPA=5000; // Starts duty cycle at 50%
      EPwm12Regs.AQCTLA.bit.CAU=1; // When count up reaches CMPA (TBCTR = 2500), forces output of pin to low - cfb
      EPwm12Regs.AQCTLA.bit.ZRO=2; // When count reaches 0, forces output of pin to high so that the duty cycle starts on at the beginning of the period -cfb
      EPwm12Regs.TBPHS.bit.TBPHS=0; // Sets phase to zero, assumed to be default setting - cfb
@@ -365,7 +365,8 @@ __interrupt void cpu_timer1_isr(void)
 
 // cpu_timer2_isr CPU Timer2 ISR
 __interrupt void cpu_timer2_isr(void)
-{    if ((numTimer0calls%250) == 0) {
+{
+    if ((numTimer0calls%250) == 0) {
         // Blink LaunchPad Blue LED
             GpioDataRegs.GPATOGGLE.bit.GPIO31 = 1;
         }
