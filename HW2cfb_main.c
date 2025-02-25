@@ -32,6 +32,7 @@ __interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
 __interrupt void SWI_isr(void);
+__interrupt void ADCA_ISR(void);
 
 // Count variables
 uint32_t numTimer0calls = 0;
@@ -39,9 +40,15 @@ uint32_t numSWIcalls = 0;
 extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
+uint16_t ADCINA4_raw = 0;
+float ADCINA4_scaled = 0;
+uint16_t ADCINA4_result = 0;
+uint32_t ADCA_interruptcount = 0;
 
 // Function Variables
 int16_t updown =1; // For cpu timer 2 LED dimming function, when updown = 1, counts up, when updown = 0 count down - cfb
+
+// global function
 
 void main(void)
 {
@@ -237,7 +244,7 @@ void main(void)
     PieVectTable.SCIB_TX_INT = &TXBINT_data_sent;
     PieVectTable.SCIC_TX_INT = &TXCINT_data_sent;
     PieVectTable.SCID_TX_INT = &TXDINT_data_sent;
-
+    PieVectTable.ADCA1_INT = &ADCA_ISR;
     PieVectTable.EMIF_ERROR_INT = &SWI_isr;
     EDIS;    // This is needed to disable write to EALLOW protected registers
 
@@ -261,14 +268,62 @@ void main(void)
     //    init_serialSCIC(&SerialC,115200);
     //    init_serialSCID(&SerialD,115200);
 
-    // Setting EPWM12A
+
+    //command ADCA peripheral to sample ADCINA4 ########################################################################################################################
+    EALLOW;
+    EPwm4Regs.ETSEL.bit.SOCAEN = 0; // Disable SOC on A group
+    EPwm4Regs.TBCTL.bit.CTRMODE = 3; // freeze counter
+    EPwm4Regs.ETSEL.bit.SOCASEL = 010; // Select Event when counter equal to PRD
+    EPwm4Regs.ETPS.bit.SOCAPRD = 01; // Generate pulse on 1st event (“pulse” is the same as “trigger”)
+    EPwm4Regs.TBCTR = 0x0; // Clear counter
+    EPwm4Regs.TBPHS.bit.TBPHS = 0x0000; // Phase is 0
+    EPwm4Regs.TBCTL.bit.PHSEN = 0; // Disable phase loading
+    EPwm4Regs.TBCTL.bit.CLKDIV = 0; // divide by 1  50Mhz Clock
+    EPwm4Regs.TBPRD = 50000;  // Set Period to 1ms sample.  Input clock is 50MHz.
+    // Notice here that we are not setting CMPA or CMPB because we are not using the PWM signal
+    EPwm4Regs.ETSEL.bit.SOCAEN = 1; //enable SOCA
+    EPwm4Regs.TBCTL.bit.CTRMODE = 00; //unfreeze, and enter up count mode
+    EDIS;
+
+    // Setup ADCA to use SOC0 ########################################################################################################################
+    // ADCA1 interrupt is setup to be called when one channel ADCINA4 is finished converting
+    // ADCA input channels :ADCINA0, ADCINA1, etc.
+    // ADCA interrupts: ADCA1, ADCA2, etc.
+
+    EALLOW;
+    //write configurations for  ADCA
+    AdcaRegs.ADCCTL2.bit.PRESCALE = 6; //set ADCCLK divider to /4
+    AdcSetMode(ADC_ADCA, ADC_RESOLUTION_12BIT, ADC_SIGNALMODE_SINGLE);  //read calibration settings
+    //Set pulse positions to late
+    AdcaRegs.ADCCTL1.bit.INTPULSEPOS = 1;
+    //power up the ADCs
+    AdcaRegs.ADCCTL1.bit.ADCPWDNZ = 1;
+    //delay for 1ms to allow ADC time to power up
+    DELAY_US(1000);
+    //Select the channels to convert and end of conversion flag
+    //ADCA
+    AdcaRegs.ADCSOC0CTL.bit.CHSEL = 0x4;//SOC0 will convert Channel you choose Does not have to be A0
+    AdcaRegs.ADCSOC0CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcaRegs.ADCSOC0CTL.bit.TRIGSEL = 0x0B;// EPWM4 ADCSOCA
+    //AdcaRegs.ADCSOC1CTL.bit.CHSEL = 0x1;//SOC1 will conv Channel you choose Does not have to be A1
+    //AdcaRegs.ADCSOC1CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    //AdcaRegs.ADCSOC1CTL.bit.TRIGSEL = 0x0B;// EPWM4 ADCSOCA
+    //AdcaRegs.ADCSOC2CTL.bit.CHSEL = 0x2;//SOC2 will conv Channel you choose Does not have to be A2
+    //AdcaRegs.ADCSOC2CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    //AdcaRegs.ADCSOC2CTL.bit.TRIGSEL = 0x0B;// EPWM4 ADCSOCA
+    AdcaRegs.ADCINTSEL1N2.bit.INT1SEL=0x1;//set to last or only SOC that is converted and it will set INT1 flag ADCA1. Only looking at SOC0, the only soc setup is 0.
+    AdcaRegs.ADCINTSEL1N2.bit.INT1E = 1;   //enable INT1 flag
+    AdcaRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //make sure INT1 flag is cleared
+    EDIS;
+
+    // Setting EPWM12A ########################################################################################################################
      EPwm12Regs.TBCTL.bit.CTRMODE=0; //Sets Counte up mode
      EPwm12Regs.TBCTL.bit.FREE_SOFT=2; //Sets the counter to continue to run (Free Run) even when there is a break point - cfb
      EPwm12Regs.TBCTL.bit.PHSEN=0; // Time-base counter is not loaded from the phase register - cfb
      EPwm12Regs.TBCTL.bit.CLKDIV=0; // Sets clockdivide to 1 - cfb
      EPwm12Regs.TBCTR=0; // Initializes Time-base counter to zero which is default setting - cfb
-     EPwm12Regs.TBPRD=10000; // Sets period (carrier frequency of the PWM signal to 5KHz which is a period of 200ms.
-     EPwm12Regs.CMPA.bit.CMPA=5000; // Starts duty cycle at 50%
+     EPwm12Regs.TBPRD=5000; // Sets period (carrier frequency of the PWM signal to 5KHz which is a period of 200ms.
+     EPwm12Regs.CMPA.bit.CMPA=2500; // Starts duty cycle at 50%
      EPwm12Regs.AQCTLA.bit.CAU=1; // When count up reaches CMPA (TBCTR = 2500), forces output of pin to low - cfb
      EPwm12Regs.AQCTLA.bit.ZRO=2; // When count reaches 0, forces output of pin to high so that the duty cycle starts on at the beginning of the period -cfb
      EPwm12Regs.TBPHS.bit.TBPHS=0; // Sets phase to zero, assumed to be default setting - cfb
@@ -287,10 +342,13 @@ void main(void)
     IER |= M_INT13;
     IER |= M_INT14;
 
+
     // Enable TINT0 in the PIE: Group 1 interrupt 7
     PieCtrlRegs.PIEIER1.bit.INTx7 = 1;
 	// Enable SWI in the PIE: Group 12 interrupt 9
     PieCtrlRegs.PIEIER12.bit.INTx9 = 1;
+    // Enagle PIE interrupt 1.1, I'm a little confused of the notation of this.FPI
+    PieCtrlRegs.PIEIER1.bit.INTx1=1;
 	
     // Enable global Interrupts and higher priority real-time debug events
     EINT;  // Enable Global interrupt INTM
@@ -302,9 +360,30 @@ void main(void)
     {
         if (UARTPrint == 1 ) {
 				//serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
+            // When UARTPRINT ==1, print ADCINA4_result
+            serial_printf(&SerialA,"ADCA1 V: %d \r\n", ADCINA4_result);
             UARTPrint = 0;
         }
     }
+}
+
+//adca1 pie interrupt
+__interrupt void ADCA_ISR (void) {
+    // Here covert ADCINA4 to volts
+    PieCtrlRegs.PIEACK.all = PIEACK_GROUP1;
+    // read ADCINA4 into ADCINA4_raw
+    ADCINA4_raw = AdcaResultRegs.ADCRESULT0;
+    // Convert ADCINA4 to voltage and store into ADCINA4_ result;
+    ADCINA4_result = ADCINA4_raw * (3.0/4096.0);
+    // Print ADCINA4’s voltage value to TeraTerm every 100ms by setting UARTPrint to one every 100th  time in this function.
+    if ((ADCA_interruptcount % 100) == 0) {
+            UARTPrint = 1;
+        }
+
+    EPwm12Regs.CMPA.bit.CMPA = ADCINA4_result/5000;
+    ADCA_interruptcount++;
+    AdcaRegs.ADCINTFLGCLR.bit.ADCINT1 = 1;  //clear interrupt flag
+    PieCtrlRegs.PIEACK.all = PIEACK_GROUP1; // ready for more interrupts
 }
 
 
@@ -370,7 +449,8 @@ __interrupt void cpu_timer2_isr(void)
         // Blink LaunchPad Blue LED
             GpioDataRegs.GPATOGGLE.bit.GPIO31 = 1;
         }
-    if (updown == 1) {
+
+    /*if (updown == 1) {
         EPwm12Regs.CMPA.bit.CMPA++;
 
         if(EPwm12Regs.CMPA.bit.CMPA == EPwm12Regs.TBPRD) {
@@ -387,7 +467,7 @@ __interrupt void cpu_timer2_isr(void)
                 }
 
 
-
+    */
     CpuTimer2.InterruptCount++;
 
 	if ((CpuTimer2.InterruptCount % 50) == 0) {
