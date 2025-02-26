@@ -39,14 +39,14 @@ uint32_t numSWIcalls = 0;
 extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
-uint16_t ADCINA4_raw = 0;
-float ADCINA4_result = 0;
-uint32_t ADCA_interruptcount = 0;
-uint16_t xaxis = 0;
-uint16_t yaxis = 0;
-
-float x_voltage = 0;
-float y_voltage = 0;
+//global variables for photoresistor
+uint16_t ADCINA4_raw = 0; // takes input from ADCA4
+float ADCINA4_result = 0; // discretized converted voltage
+uint32_t ADCA_interruptcount = 0; // clock counter for the ADCA interrupt function
+uint16_t xaxis = 0; // takes input from joystick
+uint16_t yaxis = 0; // takes input from joystick
+float x_voltage = 0; // 
+float y_voltage = 0; // 
 
 // Function Variables
 int16_t updown =1; // For cpu timer 2 LED dimming function, when updown = 1, counts up, when updown = 0 count down - cfb
@@ -247,7 +247,7 @@ void main(void)
     PieVectTable.SCIB_TX_INT = &TXBINT_data_sent;
     PieVectTable.SCIC_TX_INT = &TXCINT_data_sent;
     PieVectTable.SCID_TX_INT = &TXDINT_data_sent;
-    PieVectTable.ADCA1_INT = &ADCA_ISR;
+    PieVectTable.ADCA1_INT = &ADCA_ISR; // allows us to create an interrupt
     PieVectTable.EMIF_ERROR_INT = &SWI_isr;
     EDIS;    // This is needed to disable write to EALLOW protected registers
 
@@ -375,7 +375,7 @@ void main(void)
 __interrupt void ADCA_ISR (void) {
     // Here covert ADCINA4 to volts
     PieCtrlRegs.PIEACK.all = PIEACK_GROUP1;
-    // read ADCINA4 into ADCINA4_raw
+    // read ADCINA4 into ADCINA4_raw, read ADAC1 and ADC2 into xaxis yaxis
     ADCINA4_raw = AdcaResultRegs.ADCRESULT0;
     xaxis = AdcaResultRegs.ADCRESULT2;
     yaxis = AdcaResultRegs.ADCRESULT1;
@@ -383,6 +383,7 @@ __interrupt void ADCA_ISR (void) {
 
     // Convert ADCINA4 to voltage and store into ADCINA4_ result;
     ADCINA4_result = ADCINA4_raw * (3.0/4096.0);
+    // Converts yaxis and xaxis to voltage
     x_voltage = xaxis * (3/4096.0);
     y_voltage = yaxis * (3/4096.0);
     // Print ADCINA4’s voltage value to TeraTerm every 100ms by setting UARTPrint to one every 100th  time in this function.
@@ -392,6 +393,7 @@ __interrupt void ADCA_ISR (void) {
 
     // Turn voltage into descretized value for CMPA
     EPwm12Regs.CMPA.bit.CMPA = ADCINA4_result * (5000/3);
+    // Turns LED 8 on if there is no input to the joystick
     if (x_voltage <= 1.7 && x_voltage >= 1.5 && y_voltage >= 1.4 && y_voltage <= 1.6) {
         GpioDataRegs.GPASET.bit.GPIO25 = 1;  // 8 on
         GpioDataRegs.GPECLEAR.bit.GPIO130 = 1; // 6 off
@@ -399,7 +401,7 @@ __interrupt void ADCA_ISR (void) {
         GpioDataRegs.GPECLEAR.bit.GPIO157 = 1; // 13 off
         GpioDataRegs.GPCCLEAR.bit.GPIO95 = 1; // 3 off
     }
-
+    // turns LED 6 on if there is an input to the positive x direction
     if (x_voltage >  1.7) {
         GpioDataRegs.GPACLEAR.bit.GPIO25 = 1;  // 8 off
         GpioDataRegs.GPESET.bit.GPIO130 = 1; // 6 on
@@ -407,6 +409,7 @@ __interrupt void ADCA_ISR (void) {
         GpioDataRegs.GPECLEAR.bit.GPIO157 = 1; // 13 off
         GpioDataRegs.GPCCLEAR.bit.GPIO95 = 1; // 3 off
     }
+    // turns LED 10 on if there is an input to the negative direction
     if (x_voltage < 1.5) {
         GpioDataRegs.GPACLEAR.bit.GPIO25 = 1;  // 8 off
         GpioDataRegs.GPECLEAR.bit.GPIO130 = 1; // 6 off
@@ -414,6 +417,7 @@ __interrupt void ADCA_ISR (void) {
         GpioDataRegs.GPECLEAR.bit.GPIO157 = 1; // 13 off
         GpioDataRegs.GPCCLEAR.bit.GPIO95 = 1; // 3 off
     }
+    // turns LED 3 on if there is an input to the positive y direction
     if (y_voltage > 1.6) {
         GpioDataRegs.GPACLEAR.bit.GPIO25 = 1;  // 8 off
         GpioDataRegs.GPECLEAR.bit.GPIO130 = 1; // 6 off
@@ -421,6 +425,7 @@ __interrupt void ADCA_ISR (void) {
         GpioDataRegs.GPECLEAR.bit.GPIO157 = 1; // 13 off
         GpioDataRegs.GPCSET.bit.GPIO95 = 1; // 3 on
     }
+    // turns LED 13 on if there is an input to the negative y direction
     if (y_voltage < 1.4) {
         GpioDataRegs.GPACLEAR.bit.GPIO25 = 1;  // 8 off
         GpioDataRegs.GPECLEAR.bit.GPIO130 = 1; // 6 off
@@ -429,7 +434,7 @@ __interrupt void ADCA_ISR (void) {
         GpioDataRegs.GPCCLEAR.bit.GPIO95 = 1; // 3 off
     }
 
-    ADCA_interruptcount++;
+    ADCA_interruptcount++; // increments clock
     AdcaRegs.ADCINTFLGCLR.bit.ADCINT1 = 1;  //clear interrupt flag
     PieCtrlRegs.PIEACK.all = PIEACK_GROUP1; // ready for more interrupts
 
