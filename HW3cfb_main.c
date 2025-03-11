@@ -33,15 +33,35 @@ __interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
 __interrupt void SWI_isr(void);
+__interrupt void SPIB_isr(void);
 
-// Count variables
+// global variables
 
 uint32_t numSWIcalls = 0;
 extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
 uint16_t note_count = 0;
+int16_t spivalue1 = 0;
+int16_t spivalue2 = 0;
+int16_t gyroz_raw = 0;
+int32_t gyro_count =0;
+__interrupt void SPIB_isr(void) {
+    spivalue1=SpibRegs.SPIRXBUF; // reads first 16 bit value
+    spivalue2 =SpibRegs.SPIRXBUF; // reads second 16 bit value
+    gyroz_raw = spivalue2;
+    gyro_count++;
+    if ((gyro_count % 100) == 0) {
+        UARTPrint =1;
+    }
+    GpioDataRegs.GPCSET.bit.GPIO66 = 1; // Set high to end slave select. and do nothing for now
 
+    SpibRegs.SPIFFRX.bit.RXFFOVFCLR =1; //clear overflow flag in case of an overflow
+    SpibRegs.SPIFFRX.bit.RXFFINTCLR =1; //Clear RX FIFO interrupt flag so next interrupt will happen.
+
+    PieCtrlRegs.PIEACK.all = PIEACK_GROUP6; // acknowledge int6 PIE interrupt
+
+}
 void main(void)
 {
     // PLL, WatchDog, enable Peripheral Clocks
@@ -240,6 +260,7 @@ void main(void)
     PieVectTable.SCIB_TX_INT = &TXBINT_data_sent;
     PieVectTable.SCIC_TX_INT = &TXCINT_data_sent;
     PieVectTable.SCID_TX_INT = &TXDINT_data_sent;
+    PieVectTable.SPIB_RX_INT = &SPIB_isr;
 
     PieVectTable.EMIF_ERROR_INT = &SWI_isr;
     EDIS;    // This is needed to disable write to EALLOW protected registers
@@ -251,7 +272,7 @@ void main(void)
 
     // Configure CPU-Timer 0, 1, and 2 to interrupt every given period:
     // 200MHz CPU Freq,                       Period (in uSeconds)
-    ConfigCpuTimer(&CpuTimer0, LAUNCHPAD_CPU_FREQUENCY, 10000);
+    ConfigCpuTimer(&CpuTimer0, LAUNCHPAD_CPU_FREQUENCY, 1000);
     ConfigCpuTimer(&CpuTimer1, LAUNCHPAD_CPU_FREQUENCY, 125000);
     ConfigCpuTimer(&CpuTimer2, LAUNCHPAD_CPU_FREQUENCY, 40000);
 
@@ -267,48 +288,45 @@ void main(void)
     // Exercise 3: SPI Oscilloscope reading ########################################################################################
     GPIO_SetupPinMux(66, GPIO_MUX_CPU1, 0);  // Set as GPIO66 and used as MPU-9250 SS
     GPIO_SetupPinOptions(66, GPIO_OUTPUT, GPIO_PUSHPULL);  // Make GPIO66 an Output Pin
-    GpioDataRegs.GPCSET.bit.GPIO66 = 1;  //Initially Set GPIO66/SS High so MPU-9250 is not selected
-    GPIO_SetupPinMux(63, GPIO_MUX_CPU1, ???);  //Set GPIO63 pin to SPISIMOB
-    GPIO_SetupPinMux(64, GPIO_MUX_CPU1, ???);  //Set GPIO64 pin to SPISOMIB
-    GPIO_SetupPinMux(65, GPIO_MUX_CPU1, ???);  //Set GPIO65 pin to SPICLKB
+    // GpioDataRegs.GPCSET.bit.GPIO66 = 1;  //Initially Set GPIO66/SS High so MPU-9250 is not selected
+    GPIO_SetupPinMux(63, GPIO_MUX_CPU1, 15);  //Set GPIO63 pin to SPISIMOB
+    GPIO_SetupPinMux(64, GPIO_MUX_CPU1, 15);  //Set GPIO64 pin to SPISOMIB
+    GPIO_SetupPinMux(65, GPIO_MUX_CPU1, 15);  //Set GPIO65 pin to SPICLKB
+
     EALLOW;
-    GpioCtrlRegs.GPBPUD.bit.GPIO63   = 0;  // Enable Pull-ups on SPI PINs Recommended by TI for SPI
-    Pins
+    GpioCtrlRegs.GPBPUD.bit.GPIO63   = 0;  // Enable Pull-ups on SPI PINs Recommended by TI for SPI Pins
     GpioCtrlRegs.GPCPUD.bit.GPIO64   = 0;
     GpioCtrlRegs.GPCPUD.bit.GPIO65   = 0;
-    GpioCtrlRegs.GPBQSEL2.bit.GPIO63 = 3;  // Set I/O pin to asynchronous mode recommended for
-    SPI
-    GpioCtrlRegs.GPCQSEL1.bit.GPIO64 = 3;  // Set I/O pin to asynchronous mode recommended for
-    SPI
-    GpioCtrlRegs.GPCQSEL1.bit.GPIO65 = 3;  // Set I/O pin to asynchronous mode recommended for
-    SPI
+    GpioCtrlRegs.GPBQSEL2.bit.GPIO63 = 3;  // Set I/O pin to asynchronous mode recommended for SPI
+    GpioCtrlRegs.GPCQSEL1.bit.GPIO64 = 3;  // Set I/O pin to asynchronous mode recommended for SPI
+    GpioCtrlRegs.GPCQSEL1.bit.GPIO65 = 3;  // Set I/O pin to asynchronous mode recommended for SPI
     EDIS;
     // ---------------------------------------------------------------------------
-    SpibRegs.SPICCR.bit.SPISWRESET = ???;  // Put SPI in Reset
+    SpibRegs.SPICCR.bit.SPISWRESET = 0;  // Put SPI in Reset
     SpibRegs.SPICTL.bit.CLK_PHASE = 1;  //This happens to be the mode for both the DAN28027 and
     SpibRegs.SPICCR.bit.CLKPOLARITY = 0;  //The MPU-9250,  Mode 01.
-    SpibRegs.SPICTL.bit.MASTER_SLAVE = ???;  // Set to SPI Master
-    SpibRegs.SPICCR.bit.SPICHAR = ???;  // Set to transmit and receive 16 bits each write to SPITXBUF
-    SpibRegs.SPICTL.bit.TALK = ???;  // Enable transmission
+    SpibRegs.SPICTL.bit.MASTER_SLAVE = 1;  // Set to SPI Master
+    SpibRegs.SPICCR.bit.SPICHAR = 0xF;  // Set to transmit and receive 16 bits each write to SPITXBUF
+    SpibRegs.SPICTL.bit.TALK = 1;  // Enable transmission
     SpibRegs.SPIPRI.bit.FREE = 1;  // Free run, continue SPI operation
-    SpibRegs.SPICTL.bit.SPIINTENA = ???;  // Disables the SPI interrupt
-    SpibRegs.SPIBRR.bit.SPI_BIT_RATE = ???; // Set SCLK bit rate to 1 MHz so 1us period.  SPI base clock is
+    SpibRegs.SPICTL.bit.SPIINTENA = 0;  // Disables the SPI interrupt
+    SpibRegs.SPIBRR.bit.SPI_BIT_RATE = 49; // Set SCLK bit rate to 1 MHz so 1us period.  SPI base clock is
     // 50MHZ.  And this setting divides that base clock to create SCLks period
     SpibRegs.SPISTS.all = 0x0000;  // Clear status flags just in case they are set for some reason
-    SpibRegs.SPIFFTX.bit.SPIRST = ???;// Pull SPI FIFO out of reset, SPI FIFO can resume transmit or receive.
-    SpibRegs.SPIFFTX.bit.SPIFFENA = ???;    // Enable SPI FIFO enhancements
+    SpibRegs.SPIFFTX.bit.SPIRST = 1;// Pull SPI FIFO out of reset, SPI FIFO can resume transmit or receive.
+    SpibRegs.SPIFFTX.bit.SPIFFENA = 1;    // Enable SPI FIFO enhancements
     SpibRegs.SPIFFTX.bit.TXFIFO =  0;    // Write 0 to reset the FIFO pointer to zero, and hold in reset
     SpibRegs.SPIFFTX.bit.TXFFINTCLR = 1;    // Write 1 to clear SPIFFTX[TXFFINT] flag just in case it is set
     SpibRegs.SPIFFRX.bit.RXFIFORESET = 0;    // Write 0 to reset the FIFO pointer to zero, and hold in reset
     SpibRegs.SPIFFRX.bit.RXFFOVFCLR = 1;    // Write 1 to clear SPIFFRX[RXFFOVF] just in case it is set
-    SpibRegs.SPIFFRX.bit.RXFFINTCLR = ???;    // Write 1 to clear SPIFFRX[RXFFINT] flag just in case it is set
-    SpibRegs.SPIFFRX.bit.RXFFIENA = ???;   // Enable the RX FIFO Interrupt.  RXFFST >= RXFFIL
-    SpibRegs.SPIFFCT.bit.TXDLY = ???; //Set delay between transmits to 0 spi clocks.
-    SpibRegs.SPICCR.bit.SPISWRESET = ???;    // Pull the SPI out of reset
-    SpibRegs.SPIFFTX.bit.TXFIFO = ???;    // Release transmit FIFO from reset.
+    SpibRegs.SPIFFRX.bit.RXFFINTCLR = 1;    // Write 1 to clear SPIFFRX[RXFFINT] flag just in case it is set
+    SpibRegs.SPIFFRX.bit.RXFFIENA = 1;   // Enable the RX FIFO Interrupt.  RXFFST >= RXFFIL
+    SpibRegs.SPIFFCT.bit.TXDLY = 0; //Set delay between transmits to 0 spi clocks.
+    SpibRegs.SPICCR.bit.SPISWRESET = 1;    // Pull the SPI out of reset
+    SpibRegs.SPIFFTX.bit.TXFIFO = 1;    // Release transmit FIFO from reset.
     SpibRegs.SPIFFRX.bit.RXFIFORESET = 1;    // Re-enable receive FIFO operation
     SpibRegs.SPICTL.bit.SPIINTENA = 1;    // Enables SPI interrupt.  !! I dont think this is needed.  Need to Test
-    SpibRegs.SPIFFRX.bit.RXFFIL =???; //Interrupt Level to 16 words or more received into FIFO causes interrupt.  This is just the initial setting for the register.  Will be changed below
+    SpibRegs.SPIFFRX.bit.RXFFIL = 0x10; //Interrupt Level to 16 words or more received into FIFO causes interrupt.  This is just the initial setting for the register.  Will be changed below
 
     // Setting EPWM12A ########################################################################################################################
     EPwm9Regs.TBCTL.bit.CTRMODE=0; //Sets Counter up mode
@@ -336,11 +354,14 @@ void main(void)
     IER |= M_INT12;
     IER |= M_INT13;
     IER |= M_INT14;
+    IER |= M_INT6;  //SPIB
 
     // Enable TINT0 in the PIE: Group 1 interrupt 7
     PieCtrlRegs.PIEIER1.bit.INTx7 = 1;
     // Enable SWI in the PIE: Group 12 interrupt 9
     PieCtrlRegs.PIEIER12.bit.INTx9 = 1;
+    // Enable SPIB in the PIE: Group 6, interrupt 3
+    PieCtrlRegs.PIEIER6.bit.INTx3 = 1;
 
     // Enable global Interrupts and higher priority real-time debug events
     EINT;  // Enable Global interrupt INTM
@@ -352,7 +373,7 @@ void main(void)
     {
         if (UARTPrint == 1 ) {
             //serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
-            serial_printf(&SerialA, "Note: %d \r\n", note_count);
+            serial_printf(&SerialA, "gyroz_raw: %d \r\n", gyroz_raw);
 
             UARTPrint = 0;
         }
@@ -385,13 +406,13 @@ __interrupt void cpu_timer0_isr(void)
 {
     CpuTimer0.InterruptCount++;
     // Clear GPIO66 Low to act as a Slave Select.  Right now, just to scope.  Later to select MPU9250 chip
-    GpioDataRegs.?????  = ???;
+    GpioDataRegs.GPCCLEAR.bit.GPIO66 = 1; // Clear bit to select MPU9250 chip
     SpibRegs.SPIFFRX.bit.RXFFIL = 2;  // Issue the SPIB_RX_INT when two values are in the RX FIFO
-    SpibRegs.SPITXBUF = 0x4A3B;  // 0x4A3B and 0xB517 have no special meaning.  Wanted to send
-    SpibRegs.SPITXBUF = 0xB517;  // something so you can see the pattern on the Oscilloscope
+    SpibRegs.SPITXBUF = (0x8000 | 0x4600) ;  // 0x4A3B and 0xB517 have no special meaning.  Wanted to send
+    SpibRegs.SPITXBUF = 0x0000;  // something so you can see the pattern on the Oscilloscope
 
-
-    }
+    PieCtrlRegs.PIEACK.all = PIEACK_GROUP1; // Acknowledge this interrupt to receive more interrupts from group 1
+}
 
 
 
