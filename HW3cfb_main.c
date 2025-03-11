@@ -293,8 +293,7 @@ void main(void)
     SpibRegs.SPIPRI.bit.FREE = 1;  // Free run, continue SPI operation
     SpibRegs.SPICTL.bit.SPIINTENA = ???;  // Disables the SPI interrupt
     SpibRegs.SPIBRR.bit.SPI_BIT_RATE = ???; // Set SCLK bit rate to 1 MHz so 1us period.  SPI base clock is
-    // 50MHZ.  And this setting divides that base clock to create
-    SCLK’s period
+    // 50MHZ.  And this setting divides that base clock to create SCLks period
     SpibRegs.SPISTS.all = 0x0000;  // Clear status flags just in case they are set for some reason
     SpibRegs.SPIFFTX.bit.SPIRST = ???;// Pull SPI FIFO out of reset, SPI FIFO can resume transmit or receive.
     SpibRegs.SPIFFTX.bit.SPIFFENA = ???;    // Enable SPI FIFO enhancements
@@ -308,7 +307,7 @@ void main(void)
     SpibRegs.SPICCR.bit.SPISWRESET = ???;    // Pull the SPI out of reset
     SpibRegs.SPIFFTX.bit.TXFIFO = ???;    // Release transmit FIFO from reset.
     SpibRegs.SPIFFRX.bit.RXFIFORESET = 1;    // Re-enable receive FIFO operation
-    SpibRegs.SPICTL.bit.SPIINTENA = 1;    // Enables SPI interrupt.  !! I don’t think this is needed.  Need to Test
+    SpibRegs.SPICTL.bit.SPIINTENA = 1;    // Enables SPI interrupt.  !! I donÂ’t think this is needed.  Need to Test
     SpibRegs.SPIFFRX.bit.RXFFIL =???; //Interrupt Level to 16 words or more received into FIFO causes interrupt.  This is just the initial setting for the register.  Will be changed below
 
     // Setting EPWM12A ########################################################################################################################
