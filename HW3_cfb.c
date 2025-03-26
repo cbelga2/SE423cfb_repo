@@ -70,7 +70,7 @@ __interrupt void SPIB_isr(void) {
     gyro_x = SpibRegs.SPIRXBUF;
     gyro_y = SpibRegs.SPIRXBUF;
     gyro_z = SpibRegs.SPIRXBUF;
-    accel_x_scaled = accel_x * (4.0/32767.0); // Not sure on units
+    accel_x_scaled = accel_x * (4.0/32767.0); // Scaling to 4g from int value -32767 to 32767
     accel_y_scaled = accel_y * (4.0/32767.0);
     accel_z_scaled = accel_z * (4.0/32767.0);
     gyro_x_scaled = accel_x * (250.0/32767.0);
@@ -300,7 +300,7 @@ void main(void)
 
     // Configure CPU-Timer 0, 1, and 2 to interrupt every given period:
     // 200MHz CPU Freq,                       Period (in uSeconds)
-    ConfigCpuTimer(&CpuTimer0, LAUNCHPAD_CPU_FREQUENCY, 1000);
+    ConfigCpuTimer(&CpuTimer0, LAUNCHPAD_CPU_FREQUENCY, 1000); // Calls Spib_ISR every 100ms
     ConfigCpuTimer(&CpuTimer1, LAUNCHPAD_CPU_FREQUENCY, 125000);
     ConfigCpuTimer(&CpuTimer2, LAUNCHPAD_CPU_FREQUENCY, 40000);
 
@@ -361,7 +361,7 @@ void main(void)
     {
         if (UARTPrint == 1 ) {
             //serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
-            serial_printf(&SerialA, "gx: %.2f, gy: %.2f, gz: %.2f \r\n", gyro_x_scaled, gyro_y_scaled, gyro_z_scaled);
+            serial_printf(&SerialA, "gx: %.2f, gy: %.2f, gz: %.2f \r\n", gyro_x_scaled, gyro_y_scaled, gyro_z_scaled); // prints gyro and accelerometer values
             serial_printf(&SerialA, "ax: %.2f, ay: %.2f, az: %.2f \r\n", accel_x_scaled, accel_y_scaled, accel_z_scaled);
             UARTPrint = 0;
         }
@@ -397,7 +397,7 @@ __interrupt void cpu_timer0_isr(void)
     // Clear GPIO66 Low to act as a Slave Select.  Right now, just to scope.  Later to select MPU9250 chip
     GpioDataRegs.GPCCLEAR.bit.GPIO66 = 1; // Clear bit to select MPU9250 chip
     SpibRegs.SPIFFRX.bit.RXFFIL = 8;  // Issue the SPIB_RX_INT when two values are in the RX FIFO
-    SpibRegs.SPITXBUF = (0x8000 | 0x3A00) ;  // Set 3A is dummy address
+    SpibRegs.SPITXBUF = (0x8000 | 0x3A00) ;  // Set 3A as dummy address
     SpibRegs.SPITXBUF = 0x0000;  // read a_x
     SpibRegs.SPITXBUF = 0x0000;  // read a_y
     SpibRegs.SPITXBUF = 0x0000;  // read a_z
